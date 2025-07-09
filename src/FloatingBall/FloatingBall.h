@@ -1,5 +1,9 @@
 #pragma once
 
+#include <vector>
+#include <ranges>
+#include <algorithm>
+
 #include <QWidget>
 #include <QPoint>
 #include "../RedialMenu/RedialMenu.h"
@@ -36,36 +40,47 @@ private:
     void storeDragOffset                (const QPoint& globalPos)                                       ;
     void performDrag                    (const QPoint& globalPos)                                       ;
 
+    void transformLayerAnimated(int layer);
     void transformToRadialMenu          ()                                                              ;
+    void onAllAnimationsFinished();
+    void transformToCollapsedState();
+    void collapseLayerAnimated(int layer);
+    void onCollapseFinished();
 
     void startHoverTimer                ()                                                              ;
     void stopHoverTimer                 ()                                                              ;
 
     void updateHoveredByDirection       ()                                                              ;
-    int  getHoveredSegmentFromAngle     (double angle)               const                              ;
+    int  getHoveredSegmentFromAngle     (int layer, double angle)               const                              ;
 
 signals:
-    void segmentClicked                 (int index)                                                     ;
+    void segmentClicked                 (int layer, int index)                                                     ;
 
 private:
-    QTimer*             m_hoverTimer;
+    QTimer*                           m_hoverTimer;
 
-    bool                  m_expanded;
-    bool                  m_selected;
+    bool                                m_expanded;
+    bool                                m_selected;
 
-    QPoint              m_dragOffset;
-    QPoint         m_centerGlobalPos;
+    QPoint                            m_dragOffset;
+    QPoint                       m_centerGlobalPos;
 
-    qreal             m_drawProgress;
+    std::vector<qreal>              m_drawProgress;
 
-    int               m_hoveredIndex;
-    int               m_segmentCount;
-    bool              m_showSegments;
+    int                             m_hoveredLayer;
+    int                             m_hoveredIndex;
+    int                         m_lastHoveredLayer;
+    std::vector<int>            m_selectedSegments;
+    bool                            m_showSegments;
 
-    int                 m_layerCount;
-    double            m_layerSpacing;
+    int                               m_layerCount;
+    std::vector<double>             m_layerSpacing;
 
-    int                   m_gapAngle;
-    double             m_outerRadius;
-    double             m_innerRadius;
+    std::vector<double>               m_layerRadii;
+    std::vector<double>        m_currentLayerRadii;
+    std::vector<int>          m_layerSegmentCounts;
+    int                             m_currentLayer;
+
+    std::vector<int>                    m_gapAngle;
+    double                           m_innerRadius;
 };

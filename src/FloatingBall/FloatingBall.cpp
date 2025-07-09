@@ -10,23 +10,43 @@
 FloatingBall::FloatingBall(QWidget* parent)
     : QWidget(parent),
       m_hoverTimer(new QTimer(this)),
-      m_layerCount(2),
-      m_layerSpacing(20.0),
+      m_layerCount(4),
       m_expanded(false),
       m_selected(false),
-      m_drawProgress(0.0),
-      m_hoveredIndex(-1),
-      m_gapAngle(5),
-      m_segmentCount(5),
       m_showSegments(false),
-      m_outerRadius(50.0),
-      m_innerRadius(40.0)
+      m_innerRadius(40.0),
+      m_hoveredIndex(-1),
+      m_hoveredLayer(-1)
 {
     setupWindowFlags();
     setVisualStyle();
     centerToScreen();
     updateCenterPosition();
     setupHoverTimer();
+
+    m_currentLayer = 0;
+
+    m_layerSpacing.push_back(10.0);
+    m_layerSpacing.push_back(10.0);
+    m_layerSpacing.push_back(10.0);
+
+    m_layerRadii.push_back(100.0);
+    m_layerSegmentCounts.push_back(5);
+    m_gapAngle.push_back(5);
+
+    m_layerRadii.push_back(200.0);
+    m_layerSegmentCounts.push_back(6);
+    m_gapAngle.push_back(5);
+
+    m_layerRadii.push_back(300.0);
+    m_layerSegmentCounts.push_back(4);
+    m_gapAngle.push_back(5);
+
+    m_layerRadii.push_back(350.0);
+    m_layerSegmentCounts.push_back(8);
+    m_gapAngle.push_back(5);
+
+    m_currentLayerRadii = m_layerRadii;
 }
 
 FloatingBall::~FloatingBall() = default;
@@ -37,7 +57,7 @@ void FloatingBall::setupWindowFlags() {
 }
 
 void FloatingBall::setVisualStyle() {
-    setFixedSize(260, 260);
+    setFixedSize(760, 760);
 }
 
 void FloatingBall::centerToScreen() {
@@ -77,7 +97,7 @@ void FloatingBall::drawBall(QPainter& painter) {
     painter.setPen(Qt::NoPen);
 
     QPoint center = rect().center();
-    double r = m_outerRadius;
+    double r = m_innerRadius;
 
     QRectF ellipseRect(
         center.x() - r,
@@ -90,17 +110,7 @@ void FloatingBall::drawBall(QPainter& painter) {
 }
 
 void FloatingBall::drawSegments(QPainter& painter) {
-    const int spanAngle = (360 / m_segmentCount) - m_gapAngle;
-    int angle = 0;
-
-    const QPoint center = rect().center();
-
-    QRectF outerRect(
-        center.x() - m_outerRadius,
-        center.y() - m_outerRadius,
-        m_outerRadius * 2,
-        m_outerRadius * 2
-    );
+    QPoint center = rect().center();
 
     QRectF innerRect(
         center.x() - m_innerRadius,
@@ -109,71 +119,166 @@ void FloatingBall::drawSegments(QPainter& painter) {
         m_innerRadius * 2
     );
 
-    for (int i = 0; i < m_segmentCount; ++i) {
-        int visibleSpan = static_cast<int>(spanAngle * m_drawProgress);
-        if (visibleSpan <= 0) continue;
+    for (int layer = 0; layer <= m_layerCount - 1; ++layer) {
+        const int segmentCount = m_layerSegmentCounts[layer];
+        const double radius = m_currentLayerRadii[layer];
+        const int gapAngle = m_gapAngle[layer];
+        const int spanAngle = (360 / segmentCount) - gapAngle;
 
-        QColor color = (i == m_hoveredIndex)
-            ? QColor(180, 180, 180, 140)
-            : QColor(100, 100, 100, 140);
+        QRectF outerRect(
+            center.x() - radius,
+            center.y() - radius,
+            radius * 2,
+            radius * 2
+        );
 
-        QPainterPath path;
-        path.moveTo(center);
-        path.arcMoveTo(outerRect, angle);
-        path.arcTo(outerRect, angle, visibleSpan);
-        path.arcTo(innerRect, angle + visibleSpan, -visibleSpan);
-        path.closeSubpath();
+        int angle = 0;
+        m_drawProgress.push_back(0.0);
 
-        painter.setBrush(color);
-        painter.setPen(Qt::NoPen);
-        painter.drawPath(path);
+        for (int i = 0; i < segmentCount; ++i) {
+            int visibleSpan = static_cast<int>(spanAngle * m_drawProgress[layer]);
+            if (visibleSpan <= 0) continue;
 
-        angle += spanAngle + m_gapAngle;
+            QColor color = (layer <= m_hoveredLayer && m_selectedSegments.size() > layer && m_selectedSegments[layer] == i)
+                ? QColor(180, 180, 180, 140)
+                : QColor(100, 100, 100, 140);
+
+            QPainterPath path;
+            path.moveTo(center);
+            path.arcMoveTo(outerRect, angle);
+            path.arcTo(outerRect, angle, visibleSpan);
+            path.arcTo(innerRect, angle + visibleSpan, -visibleSpan);
+            path.closeSubpath();
+
+            painter.setBrush(color);
+            painter.setPen(Qt::NoPen);
+            painter.drawPath(path);
+
+            angle += spanAngle + gapAngle;
+        }
+
+        innerRect = outerRect;
+        const int spacing = m_layerSpacing[layer];
+        innerRect.adjust(-spacing, -spacing, spacing, spacing);
     }
 }
 
-void FloatingBall::transformToRadialMenu() {
-    const double startRadius = m_outerRadius;
-    const double targetRadius = m_expanded ? 50.0 : 120.0;
+void FloatingBall::transformLayerAnimated(int layer) {
+    if (layer >= m_layerCount) {
+        onAllAnimationsFinished();
+        return;
+    }
 
-    m_showSegments = true;
+    double startRadius = (layer == 0) ? m_innerRadius
+                                      : m_layerRadii[layer - 1] + m_layerSpacing[layer - 1];
+    double targetRadius = m_layerRadii[layer];
 
-    QVariantAnimation* anim = new QVariantAnimation(this);
-    anim->setDuration(800);
-    anim->setStartValue(startRadius);
-    anim->setEndValue(targetRadius);
-    anim->setEasingCurve(QEasingCurve::OutCubic);
+    QVariantAnimation* animation = new QVariantAnimation(this);
+    animation->setDuration(350);
+    animation->setStartValue(startRadius);
+    animation->setEndValue(targetRadius);
+    animation->setEasingCurve(QEasingCurve::OutCubic);
 
-    connect(anim, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
-        m_outerRadius = value.toDouble();
-        m_drawProgress = std::clamp((m_outerRadius - 50.0) / (120.0 - 50.0), 0.0, 1.0);
+    connect(animation, &QVariantAnimation::valueChanged, this, [=, this] (const QVariant& value) {
+        m_currentLayerRadii[layer] = value.toDouble();
+        m_drawProgress[layer] = std::clamp((m_currentLayerRadii[layer] - startRadius) / (targetRadius - startRadius), 0.0, 1.0);
         update();
     });
 
-    connect(anim, &QVariantAnimation::finished, this, [this]() {
-        if (m_expanded) {
-            m_showSegments = false;
-            m_drawProgress = 0.0;
-            update();
-        }
-
-        m_expanded = !m_expanded;
+    connect(animation, &QVariantAnimation::finished, this, [=, this]() {
+        transformLayerAnimated(layer + 1);
     });
 
-    anim->start(QAbstractAnimation::DeleteWhenStopped);
+    animation->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void FloatingBall::transformToRadialMenu() {
+    m_showSegments = true;
+    transformLayerAnimated(0);
+}
+
+void FloatingBall::onAllAnimationsFinished() {
+    if (m_expanded) {
+        m_showSegments = false;
+        m_drawProgress.clear();
+        update();
+    }
+
+    m_expanded = !m_expanded;
+}
+
+void FloatingBall::transformToCollapsedState() {
+    collapseLayerAnimated(m_layerCount - 1);
+}
+
+void FloatingBall::collapseLayerAnimated(int layer) {
+    if (layer < 0) {
+        onCollapseFinished();
+        return;
+    }
+
+    double endRadius;
+    if (layer == 0) {
+        endRadius = m_innerRadius;
+    } else {
+        endRadius = m_layerRadii[layer - 1] + m_layerSpacing[layer - 1];
+    }
+
+    double startRadius = m_layerRadii[layer];
+
+    QVariantAnimation* animation = new QVariantAnimation(this);
+    animation->setDuration(350);
+    animation->setStartValue(startRadius);
+    animation->setEndValue(endRadius);
+    animation->setEasingCurve(QEasingCurve::InCubic);
+
+    connect(animation, &QVariantAnimation::valueChanged, this, [=, this](const QVariant& value) {
+        m_currentLayerRadii[layer] = value.toDouble();
+
+        double totalDistance = startRadius - endRadius;
+        m_drawProgress[layer] = std::clamp(
+            (m_currentLayerRadii[layer] - endRadius) / totalDistance,
+            0.0, 1.0
+        );
+
+        update();
+    });
+
+    connect(animation, &QVariantAnimation::finished, this, [=, this]() {
+        collapseLayerAnimated(layer - 1);
+    });
+
+    animation->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void FloatingBall::onCollapseFinished() {
+    m_expanded = false;
+    m_showSegments = false;
+    m_drawProgress.clear();
+    update();
 }
 
 // ======= 拖动处理 =======
 
 void FloatingBall::mousePressEvent(QMouseEvent* event) {
-    if (m_hoveredIndex != -1 && m_expanded) {
-        emit segmentClicked(m_hoveredIndex);
-        transformToRadialMenu();
-    }
     if (event->button() == Qt::LeftButton) {
-        storeDragOffset(event->globalPos());
+        if (m_expanded) {
+            for (int i = 0; i < m_selectedSegments.size(); ++i) {
+                int index = m_selectedSegments[i];
+                if (index != -1) {
+                    emit segmentClicked(i, index);
+                }
+            }
+            transformToCollapsedState();
+        } else {
+            storeDragOffset(event->globalPos());
+        }
     } else if (event->button() == Qt::RightButton) {
-        transformToRadialMenu();
+        if (!m_expanded) {
+            transformToRadialMenu();
+        } else {
+            transformToCollapsedState();
+        }
     }
 }
 
@@ -219,10 +324,11 @@ void FloatingBall::stopHoverTimer() {
 void FloatingBall::updateHoveredByDirection() {
     QPoint globalMousePos = QCursor::pos();
     QPoint globalCenter = mapToGlobal(rect().center());
-
     QPointF delta = globalMousePos - globalCenter;
+    double distance = std::hypot(delta.x(), delta.y());
 
-    if (delta.manhattanLength() < 5) {
+    if (distance < 5) {
+        m_hoveredLayer = -1;
         m_hoveredIndex = -1;
         update();
         return;
@@ -231,26 +337,54 @@ void FloatingBall::updateHoveredByDirection() {
     double angle = std::atan2(-delta.y(), delta.x()) * 180 / M_PI;
     if (angle < 0) angle += 360;
 
-    int index = getHoveredSegmentFromAngle(angle);
-    if (index != m_hoveredIndex) {
-        m_hoveredIndex = index;
-        update();
+    int layer = -1;
+    for (int i = 0; i < m_layerCount; ++i) {
+        double innerRadius = (i == 0) ? m_innerRadius : m_currentLayerRadii[i - 1] + m_layerSpacing[i - 1];
+        double outerRadius = m_currentLayerRadii[i];
+        if (distance >= innerRadius && distance <= outerRadius) {
+            layer = i;
+            break;
+        }
     }
+
+    if (layer == -1) {
+        m_hoveredLayer = -1;
+        m_hoveredIndex = -1;
+        update();
+        return;
+    }
+
+    m_hoveredLayer = layer;
+    m_hoveredIndex = getHoveredSegmentFromAngle(layer, angle);
+
+    if (m_selectedSegments.size() < m_layerCount)
+        m_selectedSegments.resize(m_layerCount, -1);
+
+    m_selectedSegments[layer] = m_hoveredIndex;
+
+    for (int i = 0; i < layer; ++i) {
+        if (m_selectedSegments[i] == -1) {
+            m_selectedSegments[i] = getHoveredSegmentFromAngle(i, angle);
+        }
+    }
+
+    update();
 }
 
 
-int FloatingBall::getHoveredSegmentFromAngle(double angle) const {
-    const int totalSegments = m_segmentCount;
-    const int spanAngle = (360 / totalSegments) - m_gapAngle;
-    const int fullSpan = spanAngle + m_gapAngle;
+int FloatingBall::getHoveredSegmentFromAngle(int layer, double angle) const {
+    const int segmentCount = m_layerSegmentCounts[layer];
+    const int gapAngle = m_gapAngle[layer];
+    const int spanAngle = (360 / segmentCount) - gapAngle;
+    const int fullSpan = spanAngle + gapAngle;
 
-    for (int i = 0; i < totalSegments; ++i) {
+    for (int i = 0; i < segmentCount; ++i) {
         int startAngle = i * fullSpan;
         int endAngle = startAngle + spanAngle;
 
         if (startAngle <= angle && angle < endAngle)
             return i;
-        else if (endAngle > 360 && angle < (endAngle - 360))
+        if (endAngle > 360 && angle < (endAngle - 360))
             return i;
     }
 
