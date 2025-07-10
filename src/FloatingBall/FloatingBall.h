@@ -11,6 +11,13 @@
 class FloatingBall : public QWidget {
     Q_OBJECT
 
+    struct MenuNode {
+        std::string label;
+        std::vector<MenuNode> children;
+
+        MenuNode(std::string label, std::vector<MenuNode> children) : label(label), children(children) {}
+    };
+
 public:
     explicit FloatingBall               (QWidget* parent = nullptr)                                     ;
     ~FloatingBall                       ()                                                              ;
@@ -51,36 +58,49 @@ private:
     void stopHoverTimer                 ()                                                              ;
 
     void updateHoveredByDirection       ()                                                              ;
-    int  getHoveredSegmentFromAngle     (int layer, double angle)               const                              ;
+    int  getHoveredSegmentFromAngle     (int layer, double angle)     const                             ;
+
+    void generateMenuLayers             ()                                                              ;
+    std::vector<MenuNode> TESTgenerateMenu(
+        const std::vector<int>& branchingPerLevel,
+        int depth,
+        const std::string& prefix
+    );
 
 signals:
-    void segmentClicked                 (int layer, int index)                                                     ;
+    void segmentClicked                 (int layer, int index)                                          ;
 
 private:
-    QTimer*                           m_hoverTimer;
+    std::vector<MenuNode>                    m_menuRootNodes;
+    std::vector<std::vector<std::string>>       m_menuLayers;
 
-    bool                                m_expanded;
-    bool                                m_selected;
+    double                              m_ballShrinkProgress;
 
-    QPoint                            m_dragOffset;
-    QPoint                       m_centerGlobalPos;
+    QTimer*                                     m_hoverTimer;
 
-    std::vector<qreal>              m_drawProgress;
+    bool                                          m_expanded;
+    bool                                          m_selected;
 
-    int                             m_hoveredLayer;
-    int                             m_hoveredIndex;
-    int                         m_lastHoveredLayer;
-    std::vector<int>            m_selectedSegments;
-    bool                            m_showSegments;
+    QPoint                                      m_dragOffset;
+    QPoint                                 m_centerGlobalPos;
 
-    int                               m_layerCount;
-    std::vector<double>             m_layerSpacing;
+    std::vector<qreal>                        m_drawProgress;
 
-    std::vector<double>               m_layerRadii;
-    std::vector<double>        m_currentLayerRadii;
-    std::vector<int>          m_layerSegmentCounts;
-    int                             m_currentLayer;
+    int                                       m_hoveredLayer;
+    int                                       m_hoveredIndex;
+    int                                   m_lastHoveredLayer;
+    std::vector<int>                      m_selectedSegments;
+    bool                                      m_showSegments;
 
-    std::vector<int>                    m_gapAngle;
-    double                           m_innerRadius;
+    int                                         m_layerCount;
+    std::vector<double>                       m_layerSpacing;
+
+    std::vector<double>                         m_layerRadii;
+    std::vector<double>                  m_currentLayerRadii;
+    std::vector<int>                    m_layerSegmentCounts;
+    int                                       m_currentLayer;
+    int                                 m_expandedLayerCount;
+
+    std::vector<int>                              m_gapAngle;
+    double                                     m_innerRadius;
 };

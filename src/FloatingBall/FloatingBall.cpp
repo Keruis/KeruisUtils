@@ -16,7 +16,8 @@ FloatingBall::FloatingBall(QWidget* parent)
       m_showSegments(false),
       m_innerRadius(40.0),
       m_hoveredIndex(-1),
-      m_hoveredLayer(-1)
+      m_hoveredLayer(-1),
+      m_ballShrinkProgress(1.0)
 {
     setupWindowFlags();
     setVisualStyle();
@@ -47,6 +48,10 @@ FloatingBall::FloatingBall(QWidget* parent)
     m_gapAngle.push_back(5);
 
     m_currentLayerRadii = m_layerRadii;
+
+    m_menuRootNodes = TESTgenerateMenu({5, 6, 4, 8}, 0,  "");
+
+    generateMenuLayers();
 }
 
 FloatingBall::~FloatingBall() = default;
@@ -81,10 +86,12 @@ void FloatingBall::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    if (m_showSegments) {
-        drawSegments(painter);
-    } else {
+    if (m_ballShrinkProgress > 0.0) {
         drawBall(painter);
+    }
+
+    if (m_showSegments && m_ballShrinkProgress <= 0.0) {
+        drawSegments(painter);
     }
 }
 
@@ -97,7 +104,7 @@ void FloatingBall::drawBall(QPainter& painter) {
     painter.setPen(Qt::NoPen);
 
     QPoint center = rect().center();
-    double r = m_innerRadius;
+    double r = m_innerRadius * m_ballShrinkProgress;
 
     QRectF ellipseRect(
         center.x() - r,
@@ -154,6 +161,25 @@ void FloatingBall::drawSegments(QPainter& painter) {
             painter.setPen(Qt::NoPen);
             painter.drawPath(path);
 
+            double midAngle = angle + visibleSpan / 2.0;
+            double textRadius = (radius + innerRect.width() / 2.0) / 2.0;
+            double rad = midAngle * M_PI / 180.0;
+            QPointF textPos(
+                center.x() + textRadius * std::cos(rad),
+                center.y() - textRadius * std::sin(rad)
+            );
+
+            painter.setPen(Qt::white);
+            painter.setFont(QFont("Arial", 10));
+            QString text;
+            if (layer < m_menuLayers.size() && i < m_menuLayers[layer].size()) {
+                text = QString::fromStdString(m_menuLayers[layer][i]);
+            } else {
+                text = "?";
+            }
+            QRectF textRect(textPos.x() - 20, textPos.y() - 10, 40, 20);
+            painter.drawText(textRect, Qt::AlignCenter, text);
+
             angle += spanAngle + gapAngle;
         }
 
@@ -193,14 +219,32 @@ void FloatingBall::transformLayerAnimated(int layer) {
 }
 
 void FloatingBall::transformToRadialMenu() {
-    m_showSegments = true;
-    transformLayerAnimated(0);
+    m_ballShrinkProgress = 1.0;
+
+    QVariantAnimation* shrinkAnim = new QVariantAnimation(this);
+    shrinkAnim->setDuration(300);
+    shrinkAnim->setStartValue(1.0);
+    shrinkAnim->setEndValue(0.0);
+    shrinkAnim->setEasingCurve(QEasingCurve::InOutCubic);
+
+    connect(shrinkAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        m_ballShrinkProgress = value.toDouble();
+        update();
+    });
+
+    connect(shrinkAnim, &QVariantAnimation::finished, this, [this]() {
+        m_showSegments = true;
+        transformLayerAnimated(0);
+    });
+
+    shrinkAnim->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void FloatingBall::onAllAnimationsFinished() {
     if (m_expanded) {
         m_showSegments = false;
         m_drawProgress.clear();
+        m_ballShrinkProgress = 1.0;
         update();
     }
 
@@ -252,10 +296,25 @@ void FloatingBall::collapseLayerAnimated(int layer) {
 }
 
 void FloatingBall::onCollapseFinished() {
-    m_expanded = false;
     m_showSegments = false;
     m_drawProgress.clear();
-    update();
+
+    QVariantAnimation* growAnim = new QVariantAnimation(this);
+    growAnim->setDuration(300);
+    growAnim->setStartValue(0.0);
+    growAnim->setEndValue(1.0);
+    growAnim->setEasingCurve(QEasingCurve::OutCubic);
+
+    connect(growAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        m_ballShrinkProgress = value.toDouble();
+        update();
+    });
+
+    connect(growAnim, &QVariantAnimation::finished, this, [this]() {
+        m_expanded = false;
+    });
+
+    growAnim->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 // ======= 拖动处理 =======
@@ -368,6 +427,16 @@ void FloatingBall::updateHoveredByDirection() {
         }
     }
 
+    if (m_selectedSegments.size() < m_layerCount)
+        m_selectedSegments.resize(m_layerCount, -1);
+
+    m_selectedSegments[layer] = m_hoveredIndex;
+
+    for (int i = layer + 1; i < m_selectedSegments.size(); ++i)
+        m_selectedSegments[i] = -1;
+
+    generateMenuLayers();
+
     update();
 }
 
@@ -389,4 +458,63 @@ int FloatingBall::getHoveredSegmentFromAngle(int layer, double angle) const {
     }
 
     return -1;
+}
+
+// ======= Menu =======
+
+void FloatingBall::generateMenuLayers() {
+    m_menuLayers.clear();
+
+    const std::vector<MenuNode>* currentLevel = &m_menuRootNodes;
+
+    for (int depth = 0; ; ++depth) {
+        std::vector<std::string> layerLabels;
+
+        for (const auto& node : *currentLevel) {
+            layerLabels.push_back(node.label);
+        }
+        m_menuLayers.push_back(layerLabels);
+
+        if (depth  >= m_selectedSegments.size()) break;
+
+        int selected = m_selectedSegments[depth];
+        if (selected < 0 || selected >= currentLevel->size())
+            break;
+
+        currentLevel = &(*currentLevel)[selected].children;
+        if (currentLevel->empty())
+            break;
+    }
+}
+
+std::vector<FloatingBall::MenuNode> FloatingBall::TESTgenerateMenu(
+    const std::vector<int>& branchingPerLevel,
+    int depth,
+    const std::string& prefix
+) {
+    std::vector<MenuNode> nodes;
+
+    if (depth >= branchingPerLevel.size())
+        return nodes;
+
+    int branchingFactor = branchingPerLevel[depth];
+
+    for (int i = 0; i < branchingFactor; ++i) {
+        std::string label;
+
+        if (prefix.empty()) {
+            label = std::string(1, 'A' + i);
+        } else if (depth + 1 == branchingPerLevel.size()) {
+            label = prefix + std::to_string(i + 1);
+        } else if (std::isdigit(prefix.back())) {
+            label = prefix + static_cast<char>('a' + i);
+        } else {
+            label = prefix + std::to_string(i + 1);
+        }
+
+        auto children = TESTgenerateMenu(branchingPerLevel, depth + 1, label);
+        nodes.emplace_back(label, children);
+    }
+
+    return nodes;
 }
