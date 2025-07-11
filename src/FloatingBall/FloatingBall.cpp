@@ -17,13 +17,16 @@ FloatingBall::FloatingBall(QWidget* parent)
       m_innerRadius(40.0),
       m_hoveredIndex(-1),
       m_hoveredLayer(-1),
-      m_ballShrinkProgress(1.0)
+      m_ballShrinkProgress(1.0),
+      m_expandedLayerCount(0)
 {
     setupWindowFlags();
     setVisualStyle();
     centerToScreen();
     updateCenterPosition();
     setupHoverTimer();
+
+    m_layerOpacities.resize(m_layerCount, 1.0);
 
     m_currentLayer = 0;
 
@@ -146,9 +149,19 @@ void FloatingBall::drawSegments(QPainter& painter) {
             int visibleSpan = static_cast<int>(spanAngle * m_drawProgress[layer]);
             if (visibleSpan <= 0) continue;
 
-            QColor color = (layer <= m_hoveredLayer && m_selectedSegments.size() > layer && m_selectedSegments[layer] == i)
-                ? QColor(180, 180, 180, 140)
-                : QColor(100, 100, 100, 140);
+            QColor color;
+
+            if (layer == m_hoveredLayer && i == m_hoveredIndex) {
+                color = QColor(255, 0, 0, 180);
+            } else if (m_selectedSegments.size() > layer && m_selectedSegments[layer] == i) {
+                color = QColor(180, 180, 180, 140);
+            } else {
+                color = QColor(100, 100, 100, 140);
+            }
+
+            int baseAlpha = color.alpha();
+            double layerOpacity = (m_layerOpacities.size() > layer) ? m_layerOpacities[layer] : 1.0;
+            color.setAlphaF((baseAlpha / 255.0) * layerOpacity);
 
             QPainterPath path;
             path.moveTo(center);
@@ -169,7 +182,9 @@ void FloatingBall::drawSegments(QPainter& painter) {
                 center.y() - textRadius * std::sin(rad)
             );
 
-            painter.setPen(Qt::white);
+            QColor textColor = Qt::white;
+            textColor.setAlphaF(layerOpacity);
+            painter.setPen(textColor);
             painter.setFont(QFont("Arial", 10));
             QString text;
             if (layer < m_menuLayers.size() && i < m_menuLayers[layer].size()) {
@@ -189,7 +204,13 @@ void FloatingBall::drawSegments(QPainter& painter) {
     }
 }
 
+// ======= 动画 =======
+
 void FloatingBall::transformLayerAnimated(int layer) {
+    if (layer >= m_expandedLayerCount) {
+        return;
+    }
+
     if (layer >= m_layerCount) {
         onAllAnimationsFinished();
         return;
@@ -252,7 +273,7 @@ void FloatingBall::onAllAnimationsFinished() {
 }
 
 void FloatingBall::transformToCollapsedState() {
-    collapseLayerAnimated(m_layerCount - 1);
+    collapseLayerAnimated(m_expandedLayerCount - 1);
 }
 
 void FloatingBall::collapseLayerAnimated(int layer) {
@@ -312,38 +333,169 @@ void FloatingBall::onCollapseFinished() {
 
     connect(growAnim, &QVariantAnimation::finished, this, [this]() {
         m_expanded = false;
+        m_expandedLayerCount = 0;
     });
 
     growAnim->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
+void FloatingBall::collapseLayersInRange(int fromLayer, int toLayer) {
+    if (fromLayer > toLayer) std::swap(fromLayer, toLayer);
+    collapseLayerAnimatedInRange(toLayer, fromLayer);
+}
+
+void FloatingBall::collapseLayerAnimatedInRange(int currentLayer, int stopAtLayer) {
+    if (currentLayer < stopAtLayer) {
+        return;
+    }
+
+    double endRadius = (currentLayer == 0)
+        ? m_innerRadius
+        : m_layerRadii[currentLayer - 1] + m_layerSpacing[currentLayer - 1];
+
+    double startRadius = m_layerRadii[currentLayer];
+
+    QVariantAnimation* animation = new QVariantAnimation(this);
+    animation->setDuration(250);
+    animation->setStartValue(startRadius);
+    animation->setEndValue(endRadius);
+    animation->setEasingCurve(QEasingCurve::InCubic);
+
+    connect(animation, &QVariantAnimation::valueChanged, this, [=, this](const QVariant& value) {
+        m_currentLayerRadii[currentLayer] = value.toDouble();
+
+        double totalDistance = startRadius - endRadius;
+        m_drawProgress[currentLayer] = std::clamp(
+            (m_currentLayerRadii[currentLayer] - endRadius) / totalDistance,
+            0.0, 1.0
+        );
+
+        update();
+    });
+
+    connect(animation, &QVariantAnimation::finished, this, [=, this]() {
+        if (m_selectedSegments.size() > currentLayer)
+            m_selectedSegments[currentLayer] = -1;
+
+        collapseLayerAnimatedInRange(currentLayer - 1, stopAtLayer);
+    });
+
+    animation->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void FloatingBall::fadeLayersInRange(int fromLayer, int toLayer) {
+    if (fromLayer > toLayer) std::swap(fromLayer, toLayer);
+    fadeOutLayerInRange(fromLayer, toLayer);
+}
+
+void FloatingBall::fadeOutLayerInRange(int currentLayer, int toLayer) {
+    if (currentLayer > toLayer || currentLayer >= m_layerCount) return;
+
+    QVariantAnimation* fadeOut = new QVariantAnimation(this);
+    fadeOut->setDuration(200);
+    fadeOut->setStartValue(1.0);
+    fadeOut->setEndValue(0.0);
+    fadeOut->setEasingCurve(QEasingCurve::OutQuad);
+
+    connect(fadeOut, &QVariantAnimation::valueChanged, this, [=, this](const QVariant& value) {
+        if (m_layerOpacities.size() > currentLayer)
+            m_layerOpacities[currentLayer] = value.toDouble();
+        update();
+    });
+
+    connect(fadeOut, &QVariantAnimation::finished, this, [=, this]() {
+        fadeInLayerInRange(currentLayer, toLayer);
+    });
+
+    fadeOut->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void FloatingBall::fadeInLayerInRange(int currentLayer, int toLayer) {
+    QVariantAnimation* fadeIn = new QVariantAnimation(this);
+    fadeIn->setDuration(200);
+    fadeIn->setStartValue(0.0);
+    fadeIn->setEndValue(1.0);
+    fadeIn->setEasingCurve(QEasingCurve::InQuad);
+
+    connect(fadeIn, &QVariantAnimation::valueChanged, this, [=, this](const QVariant& value) {
+        if (m_layerOpacities.size() > currentLayer)
+            m_layerOpacities[currentLayer] = value.toDouble();
+        update();
+    });
+
+    connect(fadeIn, &QVariantAnimation::finished, this, [=, this]() {
+        fadeOutLayerInRange(currentLayer + 1, toLayer);
+    });
+
+    fadeIn->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+
 // ======= 拖动处理 =======
 
-void FloatingBall::mousePressEvent(QMouseEvent* event) {
+
+void FloatingBall::mousePressEvent(QMouseEvent * event) {
     if (event->button() == Qt::LeftButton) {
-        if (m_expanded) {
-            for (int i = 0; i < m_selectedSegments.size(); ++i) {
-                int index = m_selectedSegments[i];
-                if (index != -1) {
-                    emit segmentClicked(i, index);
+        if (m_expandedLayerCount == 0) {
+            storeDragOffset(event->globalPos());
+            return;
+        }
+
+        if (m_expandedLayerCount >= m_layerCount) {
+            if ((m_hoveredLayer + 1) == m_layerCount) {
+                for (int i = 0; i < m_selectedSegments.size(); ++i) {
+                    int index = m_selectedSegments[i];
+                    if (index != -1) {
+                        emit segmentClicked(i, index);
+                    }
+                }
+
+                collapseLayerAnimatedInRange(m_hoveredLayer + 1, m_expandedLayerCount - 1);
+                m_expandedLayerCount = m_hoveredLayer;
+                return;
+            }
+        }
+
+        if (m_hoveredLayer >= 0 && m_hoveredIndex >= 0) {
+            if (m_selectedSegments.size() < m_layerCount)
+                m_selectedSegments.resize(m_layerCount, -1);
+            m_selectedSegments[m_hoveredLayer] = m_hoveredIndex;
+
+            generateMenuLayers();
+        }
+
+        if (m_hoveredLayer + 1 < m_layerCount) {
+            if ((m_hoveredLayer + 1) == m_expandedLayerCount) {
+                m_expandedLayerCount++;
+                transformLayerAnimated(m_hoveredLayer + 1);
+            } else {
+                if (m_hoveredLayer != (m_expandedLayerCount - 2)) {
+                    collapseLayersInRange(m_hoveredLayer + 1, m_expandedLayerCount - 1);
+                    m_expandedLayerCount = m_hoveredLayer + 1;
+                } else {
+                    fadeLayersInRange(m_hoveredLayer + 1, m_expandedLayerCount - 1);
                 }
             }
-            transformToCollapsedState();
-        } else {
-            storeDragOffset(event->globalPos());
         }
+
     } else if (event->button() == Qt::RightButton) {
-        if (!m_expanded) {
+        if (!m_expanded && (m_expandedLayerCount == 0)) {
+            m_expandedLayerCount = 1;
             transformToRadialMenu();
         } else {
             transformToCollapsedState();
+            m_expandedLayerCount = 0;
+            std::ranges::fill(m_selectedSegments, -1);
         }
     }
 }
 
+
 void FloatingBall::mouseMoveEvent(QMouseEvent* event) {
     if (event->buttons() & Qt::LeftButton) {
-        performDrag(event->globalPos());
+        if (m_expandedLayerCount == 0) {
+            performDrag(event->globalPos());
+        }
     }
 }
 
@@ -409,33 +561,10 @@ void FloatingBall::updateHoveredByDirection() {
     if (layer == -1) {
         m_hoveredLayer = -1;
         m_hoveredIndex = -1;
-        update();
-        return;
+    } else {
+        m_hoveredLayer = layer;
+        m_hoveredIndex = getHoveredSegmentFromAngle(layer, angle);
     }
-
-    m_hoveredLayer = layer;
-    m_hoveredIndex = getHoveredSegmentFromAngle(layer, angle);
-
-    if (m_selectedSegments.size() < m_layerCount)
-        m_selectedSegments.resize(m_layerCount, -1);
-
-    m_selectedSegments[layer] = m_hoveredIndex;
-
-    for (int i = 0; i < layer; ++i) {
-        if (m_selectedSegments[i] == -1) {
-            m_selectedSegments[i] = getHoveredSegmentFromAngle(i, angle);
-        }
-    }
-
-    if (m_selectedSegments.size() < m_layerCount)
-        m_selectedSegments.resize(m_layerCount, -1);
-
-    m_selectedSegments[layer] = m_hoveredIndex;
-
-    for (int i = layer + 1; i < m_selectedSegments.size(); ++i)
-        m_selectedSegments[i] = -1;
-
-    generateMenuLayers();
 
     update();
 }

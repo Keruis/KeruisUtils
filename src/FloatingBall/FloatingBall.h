@@ -47,12 +47,17 @@ private:
     void storeDragOffset                (const QPoint& globalPos)                                       ;
     void performDrag                    (const QPoint& globalPos)                                       ;
 
-    void transformLayerAnimated(int layer);
+    void transformLayerAnimated         (int layer)                                                     ;
     void transformToRadialMenu          ()                                                              ;
-    void onAllAnimationsFinished();
-    void transformToCollapsedState();
-    void collapseLayerAnimated(int layer);
-    void onCollapseFinished();
+    void onAllAnimationsFinished        ()                                                              ;
+    void transformToCollapsedState      ()                                                              ;
+    void collapseLayerAnimated          (int layer)                                                     ;
+    void onCollapseFinished             ()                                                              ;
+    void collapseLayersInRange          (int fromLayer, int toLayer)                                    ;
+    void collapseLayerAnimatedInRange   (int currentLayer, int stopAtLayer)                             ;
+    void fadeLayersInRange              (int fromLayer, int toLayer)                                    ;
+    void fadeOutLayerInRange            (int currentLayer, int toLayer)                                 ;
+    void fadeInLayerInRange             (int currentLayer, int toLayer)                                 ;
 
     void startHoverTimer                ()                                                              ;
     void stopHoverTimer                 ()                                                              ;
@@ -71,6 +76,8 @@ signals:
     void segmentClicked                 (int layer, int index)                                          ;
 
 private:
+
+
     std::vector<MenuNode>                    m_menuRootNodes;
     std::vector<std::vector<std::string>>       m_menuLayers;
 
@@ -100,6 +107,8 @@ private:
     std::vector<int>                    m_layerSegmentCounts;
     int                                       m_currentLayer;
     int                                 m_expandedLayerCount;
+
+    std::vector<double>                     m_layerOpacities;
 
     std::vector<int>                              m_gapAngle;
     double                                     m_innerRadius;
