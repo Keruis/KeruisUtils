@@ -6,8 +6,18 @@
 
 #include <QWidget>
 #include <QPoint>
-#include "../RedialMenu/RedialMenu.h"
+#include <QPainter>
+#include <QPainterPath>
+#include <QMouseEvent>
+#include <QApplication>
+#include <QPropertyAnimation>
+#include <QTimer>
+#include <QDateTime>
+#include <QElapsedTimer>
 
+#include "FloatingBall.h"
+#include "../../Script/ClassRegistry.h"
+#include "../../Tool/window/WindowController.h"
 class FloatingBall : public QWidget {
     Q_OBJECT
 
@@ -16,6 +26,12 @@ class FloatingBall : public QWidget {
         std::vector<MenuNode> children;
 
         MenuNode(std::string label, std::vector<MenuNode> children) : label(label), children(children) {}
+    };
+
+    struct Ripple {
+        float progress = 0.0f;
+        QPoint center;
+        QDateTime createdAt = QDateTime::currentDateTime();
     };
 
 public:
@@ -65,6 +81,13 @@ private:
     void updateHoveredByDirection       ()                                                              ;
     int  getHoveredSegmentFromAngle     (int layer, double angle)     const                             ;
 
+    Q_PROPERTY(float eyeOpenProgress READ eyeOpenProgress WRITE setEyeOpenProgress)
+    float eyeOpenProgress() const { return m_eyeOpenProgress; }
+    void setEyeOpenProgress(float value) {
+        m_eyeOpenProgress = value;
+        update(); // 每当进度更新，重新绘制
+    }
+
     void generateMenuLayers             ()                                                              ;
     std::vector<MenuNode> TESTgenerateMenu(
         const std::vector<int>& branchingPerLevel,
@@ -76,8 +99,6 @@ signals:
     void segmentClicked                 (int layer, int index)                                          ;
 
 private:
-
-
     std::vector<MenuNode>                    m_menuRootNodes;
     std::vector<std::vector<std::string>>       m_menuLayers;
 
@@ -112,4 +133,6 @@ private:
 
     std::vector<int>                              m_gapAngle;
     double                                     m_innerRadius;
+
+    float                                  m_eyeOpenProgress;
 };

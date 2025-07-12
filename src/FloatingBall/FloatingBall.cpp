@@ -1,9 +1,4 @@
 #include "FloatingBall.h"
-#include <QPainter>
-#include <QMouseEvent>
-#include <QApplication>
-#include <QPropertyAnimation>
-#include <QScreen>
 
 // ======= 构造 & 初始化 =======
 
@@ -18,7 +13,8 @@ FloatingBall::FloatingBall(QWidget* parent)
       m_hoveredIndex(-1),
       m_hoveredLayer(-1),
       m_ballShrinkProgress(1.0),
-      m_expandedLayerCount(0)
+      m_expandedLayerCount(0),
+      m_eyeOpenProgress(-0.25f)
 {
     setupWindowFlags();
     setVisualStyle();
@@ -80,7 +76,6 @@ void FloatingBall::updateCenterPosition() {
 void FloatingBall::setupHoverTimer() {
     m_hoverTimer->setInterval(16);
     connect(m_hoverTimer, &QTimer::timeout, this, &FloatingBall::updateHoveredByDirection);
-    startHoverTimer();
 }
 
 // ======= 绘制 =======
@@ -99,15 +94,21 @@ void FloatingBall::paintEvent(QPaintEvent*) {
 }
 
 void FloatingBall::drawBall(QPainter& painter) {
-    QColor color = m_selected 
-                   ? QColor(180, 180, 180, 140)
-                   : QColor(100, 100, 100, 140);
-
-    painter.setBrush(color);
-    painter.setPen(Qt::NoPen);
-
     QPoint center = rect().center();
     double r = m_innerRadius * m_ballShrinkProgress;
+
+    QRadialGradient gradient;
+    gradient.setCenter(center);
+    gradient.setFocalPoint(center.x() - r * 0.3, center.y() - r * 0.3);
+    gradient.setRadius(r);
+
+    if (m_selected) {
+        gradient.setColorAt(0.0, QColor(220, 220, 220, 200));
+        gradient.setColorAt(1.0, QColor(180, 180, 180, 140));
+    } else {
+        gradient.setColorAt(0.0, QColor(150, 150, 150, 200));
+        gradient.setColorAt(1.0, QColor(100, 100, 100, 140));
+    }
 
     QRectF ellipseRect(
         center.x() - r,
@@ -116,7 +117,84 @@ void FloatingBall::drawBall(QPainter& painter) {
         r * 2
     );
 
+    double middleRadius = r * 0.5;
+    QRectF middleRect(
+        center.x() - middleRadius,
+        center.y() - middleRadius,
+        middleRadius * 2,
+        middleRadius * 2
+    );
+
+    QColor middleColor = m_selected
+        ? QColor(220, 220, 220, 200)
+        : QColor(180, 180, 180, 140);
+
+    double innerRadius = r * 0.25;
+    QRectF innerCircle(
+        center.x() - innerRadius,
+        center.y() - innerRadius,
+        innerRadius * 2,
+        innerRadius * 2
+    );
+
+    QColor innerColor = m_selected
+        ? QColor(255, 0, 0, 220)
+        : QColor(120, 120, 120, 180);
+
+    painter.setBrush(gradient);
+    painter.setPen(Qt::NoPen);
     painter.drawEllipse(ellipseRect);
+    painter.setBrush(middleColor);
+    painter.drawEllipse(middleRect);
+    painter.setBrush(innerColor);
+    painter.drawEllipse(innerCircle);
+
+    if (m_selected) {
+        QRadialGradient glowGradient;
+        glowGradient.setCenter(center);
+        glowGradient.setFocalPoint(center);
+        glowGradient.setRadius(r * 1.5);
+
+        glowGradient.setColorAt(0.0, QColor(255, 0, 0, 100));
+        glowGradient.setColorAt(0.7, QColor(255, 0, 0, 30));
+        glowGradient.setColorAt(1.0, QColor(255, 0, 0, 0));
+
+        painter.setBrush(glowGradient);
+        painter.setPen(Qt::NoPen);
+
+        QRectF glowRect(
+            center.x() - r * 1.5,
+            center.y() - r * 1.5,
+            r * 3.0,
+            r * 3.0
+        );
+
+        painter.drawEllipse(glowRect);
+    }
+
+    QPainterPath lowerMask, upperMask;
+
+    qreal offset = r * (1.0 - m_eyeOpenProgress);
+
+    QRectF arcRect(center.x() - r, center.y() - r, r * 2, r * 2);
+    QPointF lowerEyeCenter(center.x(), center.y() + offset);
+    QPointF upperEyeCenter(center.x(), center.y() - offset);
+
+    QPointF startLowerPoint(center.x() - r, center.y());
+    QPointF endLowerPoint(center.x() + r, center.y());
+
+    lowerMask.moveTo(startLowerPoint);
+    lowerMask.quadTo(lowerEyeCenter, endLowerPoint);
+    lowerMask.arcTo(arcRect, 0, -180);
+
+    painter.setBrush(QColor(255, 255, 255, 255));
+    painter.setPen(Qt::NoPen);
+    painter.drawPath(lowerMask);
+
+    upperMask.moveTo(startLowerPoint);
+    upperMask.arcTo(arcRect, 180, -180);
+    upperMask.quadTo(upperEyeCenter, startLowerPoint);
+    painter.drawPath(upperMask);
 }
 
 void FloatingBall::drawSegments(QPainter& painter) {
@@ -449,7 +527,7 @@ void FloatingBall::mousePressEvent(QMouseEvent * event) {
                         emit segmentClicked(i, index);
                     }
                 }
-
+                
                 collapseLayerAnimatedInRange(m_hoveredLayer + 1, m_expandedLayerCount - 1);
                 m_expandedLayerCount = m_hoveredLayer;
                 return;
@@ -481,8 +559,10 @@ void FloatingBall::mousePressEvent(QMouseEvent * event) {
     } else if (event->button() == Qt::RightButton) {
         if (!m_expanded && (m_expandedLayerCount == 0)) {
             m_expandedLayerCount = 1;
+            m_hoverTimer->start();
             transformToRadialMenu();
         } else {
+            m_hoverTimer->stop();
             transformToCollapsedState();
             m_expandedLayerCount = 0;
             std::ranges::fill(m_selectedSegments, -1);
@@ -491,7 +571,7 @@ void FloatingBall::mousePressEvent(QMouseEvent * event) {
 }
 
 
-void FloatingBall::mouseMoveEvent(QMouseEvent* event) {
+void FloatingBall::mouseMoveEvent(QMouseEvent *event) {
     if (event->buttons() & Qt::LeftButton) {
         if (m_expandedLayerCount == 0) {
             performDrag(event->globalPos());
@@ -505,10 +585,20 @@ void FloatingBall::closeEvent(QCloseEvent *event) {
 
 void FloatingBall::enterEvent(QEnterEvent* event) {
     m_selected = true;
+    QPropertyAnimation* anim = new QPropertyAnimation(this, "eyeOpenProgress");
+    anim->setStartValue(m_eyeOpenProgress);
+    anim->setEndValue(-0.25);
+    anim->setDuration(500);
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void FloatingBall::leaveEvent(QEvent* event) {
     m_selected = false;
+    QPropertyAnimation* anim = new QPropertyAnimation(this, "eyeOpenProgress");
+    anim->setStartValue(m_eyeOpenProgress);
+    anim->setEndValue(1.25);
+    anim->setDuration(500);
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void FloatingBall::storeDragOffset(const QPoint& globalPos) {

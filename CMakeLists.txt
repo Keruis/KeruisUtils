@@ -23,7 +23,12 @@ add_executable(${PROJECT_NAME}
     WIN32 # If you need a terminal for debug, please comment this statement 
     src/RedialMenu/RedialMenu.cpp
     src/FloatingBall/FloatingBall.cpp
-    ${srcs} 
+    ${srcs}
+        Script/ClassRegistry.cpp
+        Script/ClassRegistry.h
+        Tool/window/WindowController.cpp
+        Tool/window/WindowController.h
+
 ) 
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
