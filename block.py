@@ -1,7 +1,8 @@
 import sys
 from PyQt6.QtCore import Qt, QPoint, QRect
-from PyQt6.QtGui import QColor, QPainter
-from PyQt6.QtWidgets import QApplication, QWidget, QColorDialog
+from PyQt6.QtGui import QColor, QPainter, QPixmap
+from PyQt6.QtWidgets import QApplication, QWidget, QColorDialog, QFileDialog
+
 
 class ColorSquare(QWidget):
     def __init__(self):
@@ -17,12 +18,20 @@ class ColorSquare(QWidget):
         self.resize_direction = None
         self.margin = 8  # 判定边缘大小
 
+        self.image = None
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(self.color)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRect(self.rect())
+
+        if self.image:
+            # 绘制图片填充整个区域
+            painter.drawPixmap(self.rect(), self.image)
+        else:
+            # 绘制纯色背景
+            painter.setBrush(self.color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(self.rect())
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -38,6 +47,7 @@ class ColorSquare(QWidget):
             color = QColorDialog.getColor(self.color, self, "选择颜色")
             if color.isValid():
                 self.color = color
+                self.image = None
                 self.update()
 
     def mouseMoveEvent(self, event):
@@ -100,6 +110,12 @@ class ColorSquare(QWidget):
                 flags |= Qt.WindowType.WindowStaysOnTopHint
             self.setWindowFlags(flags)
             self.show()
+
+        elif event.key() == Qt.Key.Key_Z:
+            file_path, _ = QFileDialog.getOpenFileName(self, "选择图片", "", "Images (*.png *.jpg *.bmp *.gif)")
+            if file_path:
+                self.image = QPixmap(file_path)
+                self.update()
 
     def _getResizeDirection(self, pos):
         x, y = pos.x(), pos.y()

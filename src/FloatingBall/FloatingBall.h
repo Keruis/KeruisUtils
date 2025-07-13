@@ -135,4 +135,6 @@ private:
     double                                     m_innerRadius;
 
     float                                  m_eyeOpenProgress;
+
+
 };

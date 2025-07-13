@@ -14,7 +14,7 @@ FloatingBall::FloatingBall(QWidget* parent)
       m_hoveredLayer(-1),
       m_ballShrinkProgress(1.0),
       m_expandedLayerCount(0),
-      m_eyeOpenProgress(-0.25f)
+      m_eyeOpenProgress(1.0)
 {
     setupWindowFlags();
     setVisualStyle();
@@ -102,13 +102,8 @@ void FloatingBall::drawBall(QPainter& painter) {
     gradient.setFocalPoint(center.x() - r * 0.3, center.y() - r * 0.3);
     gradient.setRadius(r);
 
-    if (m_selected) {
-        gradient.setColorAt(0.0, QColor(220, 220, 220, 200));
-        gradient.setColorAt(1.0, QColor(180, 180, 180, 140));
-    } else {
-        gradient.setColorAt(0.0, QColor(150, 150, 150, 200));
-        gradient.setColorAt(1.0, QColor(100, 100, 100, 140));
-    }
+    gradient.setColorAt(0.0, QColor(141,196,253, 200));
+    gradient.setColorAt(1.0, QColor(141,196,253, 140));
 
     QRectF ellipseRect(
         center.x() - r,
@@ -118,6 +113,8 @@ void FloatingBall::drawBall(QPainter& painter) {
     );
 
     double middleRadius = r * 0.5;
+    double middleInnerRadius = middleRadius * 0.7;
+
     QRectF middleRect(
         center.x() - middleRadius,
         center.y() - middleRadius,
@@ -125,11 +122,21 @@ void FloatingBall::drawBall(QPainter& painter) {
         middleRadius * 2
     );
 
-    QColor middleColor = m_selected
-        ? QColor(220, 220, 220, 200)
-        : QColor(180, 180, 180, 140);
+    QRectF middleInnerRect(
+        center.x() - middleInnerRadius,
+        center.y() - middleInnerRadius,
+        middleInnerRadius * 2,
+        middleInnerRadius * 2
+    );
 
-    double innerRadius = r * 0.25;
+    QPainterPath middlePath, middleInnerPath;
+    middlePath.addEllipse(middleRect);
+    middleInnerPath.addEllipse(middleInnerRect);
+    middlePath = middlePath.subtracted(middleInnerPath);
+
+    QColor middleColor = QColor(178,219,251, 200);
+
+    double innerRadius = r * 0.3;
     QRectF innerCircle(
         center.x() - innerRadius,
         center.y() - innerRadius,
@@ -137,15 +144,13 @@ void FloatingBall::drawBall(QPainter& painter) {
         innerRadius * 2
     );
 
-    QColor innerColor = m_selected
-        ? QColor(255, 0, 0, 220)
-        : QColor(120, 120, 120, 180);
+    QColor innerColor = QColor(124,164,223, 220);
 
     painter.setBrush(gradient);
     painter.setPen(Qt::NoPen);
     painter.drawEllipse(ellipseRect);
     painter.setBrush(middleColor);
-    painter.drawEllipse(middleRect);
+    painter.drawPath(middlePath);
     painter.setBrush(innerColor);
     painter.drawEllipse(innerCircle);
 
@@ -155,9 +160,9 @@ void FloatingBall::drawBall(QPainter& painter) {
         glowGradient.setFocalPoint(center);
         glowGradient.setRadius(r * 1.5);
 
-        glowGradient.setColorAt(0.0, QColor(255, 0, 0, 100));
-        glowGradient.setColorAt(0.7, QColor(255, 0, 0, 30));
-        glowGradient.setColorAt(1.0, QColor(255, 0, 0, 0));
+        glowGradient.setColorAt(0.0, QColor(209,248,255, 100));
+        glowGradient.setColorAt(0.7, QColor(209,248,255, 30));
+        glowGradient.setColorAt(1.0, QColor(209,248,255, 0));
 
         painter.setBrush(glowGradient);
         painter.setPen(Qt::NoPen);
@@ -187,7 +192,15 @@ void FloatingBall::drawBall(QPainter& painter) {
     lowerMask.quadTo(lowerEyeCenter, endLowerPoint);
     lowerMask.arcTo(arcRect, 0, -180);
 
-    painter.setBrush(QColor(255, 255, 255, 255));
+    if (m_selected) {
+        gradient.setColorAt(0.0, QColor(220, 220, 220, 255));
+        gradient.setColorAt(1.0, QColor(180, 180, 180, 255));
+    } else {
+        gradient.setColorAt(0.0, QColor(150, 150, 150, 255));
+        gradient.setColorAt(1.0, QColor(100, 100, 100, 255));
+    }
+
+    painter.setBrush(gradient);
     painter.setPen(Qt::NoPen);
     painter.drawPath(lowerMask);
 
