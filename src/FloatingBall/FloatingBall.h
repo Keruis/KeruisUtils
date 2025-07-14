@@ -60,6 +60,7 @@ private:
 
     void drawBall                       (QPainter& painter)                                             ;
     void drawSegments                   (QPainter& painter)                                             ;
+    void drawDockedState                (QPainter& painter)                                             ;
     void storeDragOffset                (const QPoint& globalPos)                                       ;
     void performDrag                    (const QPoint& globalPos)                                       ;
 
@@ -77,6 +78,9 @@ private:
 
     void startHoverTimer                ()                                                              ;
     void stopHoverTimer                 ()                                                              ;
+
+    void startJellyRestoreElastic       ()                                                              ;
+    void stickToNearestEdge             (bool isDocked)                                                 ;
 
     void updateHoveredByDirection       ()                                                              ;
     int  getHoveredSegmentFromAngle     (int layer, double angle)     const                             ;
@@ -136,5 +140,9 @@ private:
 
     float                                  m_eyeOpenProgress;
 
+    QPointF                                    m_jellyOffset;
+    QPointF                                    m_lastDragPos;
+    QVariantAnimation*               m_jellyRestoreAnimation;
 
+    bool                                     m_inDockedState;
 };

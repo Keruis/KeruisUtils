@@ -14,7 +14,9 @@ FloatingBall::FloatingBall(QWidget* parent)
       m_hoveredLayer(-1),
       m_ballShrinkProgress(1.0),
       m_expandedLayerCount(0),
-      m_eyeOpenProgress(1.0)
+      m_eyeOpenProgress(1.0),
+      m_jellyRestoreAnimation(nullptr),
+      m_inDockedState(false)
 {
     setupWindowFlags();
     setVisualStyle();
@@ -84,6 +86,11 @@ void FloatingBall::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
+    if (m_inDockedState) {
+        drawDockedState(painter);
+        return;
+    }
+
     if (m_ballShrinkProgress > 0.0) {
         drawBall(painter);
     }
@@ -96,6 +103,16 @@ void FloatingBall::paintEvent(QPaintEvent*) {
 void FloatingBall::drawBall(QPainter& painter) {
     QPoint center = rect().center();
     double r = m_innerRadius * m_ballShrinkProgress;
+
+    double scaleX = 1.0 - m_jellyOffset.x() / (r * 2.0);
+    double scaleY = 1.0 - m_jellyOffset.y() / (r * 2.0);
+    scaleX = std::clamp(scaleX, 0.85, 1.15);
+    scaleY = std::clamp(scaleY, 0.85, 1.15);
+
+    painter.save();
+    painter.translate(center);
+    painter.scale(scaleY, scaleX);
+    painter.translate(-center);
 
     QRadialGradient gradient;
     gradient.setCenter(center);
@@ -208,6 +225,7 @@ void FloatingBall::drawBall(QPainter& painter) {
     upperMask.arcTo(arcRect, 180, -180);
     upperMask.quadTo(upperEyeCenter, startLowerPoint);
     painter.drawPath(upperMask);
+    painter.restore();
 }
 
 void FloatingBall::drawSegments(QPainter& painter) {
@@ -294,6 +312,49 @@ void FloatingBall::drawSegments(QPainter& painter) {
         innerRect.adjust(-spacing, -spacing, spacing, spacing);
     }
 }
+
+
+void FloatingBall::drawDockedState(QPainter &painter) {
+    QPoint center = rect().center();
+
+    constexpr int capsuleWidth = 20;
+    constexpr int capsuleHeight = 60;
+    constexpr int radius = capsuleWidth / 2;
+
+    QRectF topArcRect(
+        center.x() - radius,
+        center.y() - capsuleHeight / 2,
+        capsuleWidth,
+        capsuleWidth
+    );
+
+    QRectF bottomArcRect(
+        center.x() - radius,
+        center.y() + capsuleHeight / 2 - capsuleWidth,
+        capsuleWidth,
+        capsuleWidth
+    );
+
+    QPainterPath path;
+
+    path.moveTo(bottomArcRect.left(), bottomArcRect.center().y());
+
+    path.arcTo(bottomArcRect, 180, 180);
+
+    path.lineTo(topArcRect.right(), topArcRect.center().y());
+
+    path.arcTo(topArcRect, 0, 180);
+
+    path.lineTo(bottomArcRect.left(), bottomArcRect.center().y());
+
+    path.closeSubpath();
+
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setBrush(QColor(220, 220, 220, 200));
+    painter.setPen(Qt::NoPen);
+    painter.drawPath(path);
+}
+
 
 // ======= 动画 =======
 
@@ -527,6 +588,8 @@ void FloatingBall::fadeInLayerInRange(int currentLayer, int toLayer) {
 
 void FloatingBall::mousePressEvent(QMouseEvent * event) {
     if (event->button() == Qt::LeftButton) {
+        startJellyRestoreElastic();
+        stickToNearestEdge(true);
         if (m_expandedLayerCount == 0) {
             storeDragOffset(event->globalPos());
             return;
@@ -570,21 +633,24 @@ void FloatingBall::mousePressEvent(QMouseEvent * event) {
         }
 
     } else if (event->button() == Qt::RightButton) {
-        if (!m_expanded && (m_expandedLayerCount == 0)) {
-            m_expandedLayerCount = 1;
-            m_hoverTimer->start();
-            transformToRadialMenu();
-        } else {
-            m_hoverTimer->stop();
-            transformToCollapsedState();
-            m_expandedLayerCount = 0;
-            std::ranges::fill(m_selectedSegments, -1);
+        if (!m_inDockedState) {
+            if (!m_expanded && (m_expandedLayerCount == 0)) {
+                m_expandedLayerCount = 1;
+                m_hoverTimer->start();
+                transformToRadialMenu();
+            } else {
+                m_hoverTimer->stop();
+                transformToCollapsedState();
+                m_expandedLayerCount = 0;
+                std::ranges::fill(m_selectedSegments, -1);
+            }
         }
     }
 }
 
 
 void FloatingBall::mouseMoveEvent(QMouseEvent *event) {
+    stickToNearestEdge(false);
     if (event->buttons() & Qt::LeftButton) {
         if (m_expandedLayerCount == 0) {
             performDrag(event->globalPos());
@@ -600,27 +666,44 @@ void FloatingBall::enterEvent(QEnterEvent* event) {
     m_selected = true;
     QPropertyAnimation* anim = new QPropertyAnimation(this, "eyeOpenProgress");
     anim->setStartValue(m_eyeOpenProgress);
-    anim->setEndValue(-0.25);
+    anim->setEndValue(-0.8);
     anim->setDuration(500);
     anim->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void FloatingBall::leaveEvent(QEvent* event) {
     m_selected = false;
+
+    stickToNearestEdge(true);
+
+    if (m_jellyOffset.manhattanLength() > 0.1) {
+        startJellyRestoreElastic();
+    }
+
     QPropertyAnimation* anim = new QPropertyAnimation(this, "eyeOpenProgress");
     anim->setStartValue(m_eyeOpenProgress);
-    anim->setEndValue(1.25);
+    anim->setEndValue(1.8);
     anim->setDuration(500);
     anim->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void FloatingBall::storeDragOffset(const QPoint& globalPos) {
     m_dragOffset = globalPos - frameGeometry().topLeft();
+    m_lastDragPos = globalPos;
 }
 
 void FloatingBall::performDrag(const QPoint& globalPos) {
+    QPointF delta = globalPos - m_lastDragPos;
+
+    m_jellyOffset = delta * 3.5;//* 0.5;
+    m_jellyOffset.setX(std::clamp(m_jellyOffset.x(), -100.0, 100.0));
+    m_jellyOffset.setY(std::clamp(m_jellyOffset.y(), -100.0, 100.0));
+
+    m_lastDragPos = globalPos;
+
     move(globalPos - m_dragOffset);
     updateCenterPosition();
+    update();
 }
 
 void FloatingBall::startHoverTimer() {
@@ -634,6 +717,80 @@ void FloatingBall::stopHoverTimer() {
         m_hoverTimer->stop();
     }
 }
+
+void FloatingBall::startJellyRestoreElastic() {
+    if (m_jellyRestoreAnimation) {
+        m_jellyRestoreAnimation->stop();
+        m_jellyRestoreAnimation->deleteLater();
+    }
+
+    m_jellyRestoreAnimation = new QVariantAnimation(this);
+    m_jellyRestoreAnimation->setDuration(600);
+    m_jellyRestoreAnimation->setStartValue(m_jellyOffset);
+    m_jellyRestoreAnimation->setEndValue(QPointF(0, 0));
+
+    m_jellyRestoreAnimation->setEasingCurve(QEasingCurve::OutElastic);
+
+    connect(m_jellyRestoreAnimation, &QVariantAnimation::valueChanged, this, [=](const QVariant &value) {
+        m_jellyOffset = value.toPointF();
+        update();
+    });
+
+    connect(m_jellyRestoreAnimation, &QVariantAnimation::finished, this, [=]() {
+        m_jellyOffset = QPointF(0, 0);
+        update();
+    });
+
+    m_jellyRestoreAnimation->start();
+}
+
+void FloatingBall::stickToNearestEdge(bool isDocked) {
+    QRect screenRect = QGuiApplication::primaryScreen()->availableGeometry();
+    QPoint center = rect().center() + this->pos();
+
+    const int r = static_cast<int>(m_innerRadius);
+    const int snapThreshold = 50;
+
+    int leftDist   = std::abs(center.x() - r - screenRect.left());
+    int rightDist  = std::abs(center.x() + r - screenRect.right());
+    int topDist    = std::abs(center.y() - r - screenRect.top());
+    int bottomDist = std::abs(center.y() + r - screenRect.bottom());
+
+    int minDist = std::min({leftDist, rightDist, topDist, bottomDist});
+    QPoint targetCenter = center;
+
+    if (minDist > snapThreshold) {
+        m_inDockedState = false;
+        return;
+    }
+
+    m_inDockedState = true;
+
+    if (isDocked) {
+        if (minDist == leftDist)
+            targetCenter.setX(screenRect.left() + r - 35);
+        else if (minDist == rightDist)
+            targetCenter.setX(screenRect.right() - r + 35);
+        else if (minDist == topDist)
+            targetCenter.setY(screenRect.top() + r);
+        else if (minDist == bottomDist)
+            targetCenter.setY(screenRect.bottom() - r);
+
+        QPoint offset = rect().center();
+        QPoint targetTopLeft = targetCenter - offset;
+
+        this->move(targetTopLeft);
+    }
+
+    // 平滑动画
+    // QPropertyAnimation* anim = new QPropertyAnimation(this, "pos");
+    // anim->setDuration(200);
+    // anim->setStartValue(this->pos());
+    // anim->setEndValue(targetTopLeft);
+    // anim->setEasingCurve(QEasingCurve::OutQuad);
+    // anim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
 
 void FloatingBall::updateHoveredByDirection() {
     QPoint globalMousePos = QCursor::pos();
