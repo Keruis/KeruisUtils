@@ -16,7 +16,7 @@ FloatingBall::FloatingBall(QWidget* parent)
       m_expandedLayerCount(0),
       m_eyeOpenProgress(1.0),
       m_jellyRestoreAnimation(nullptr),
-      m_inDockedState(false)
+      m_dockDirection(DockDirection::None)
 {
     setupWindowFlags();
     setVisualStyle();
@@ -86,9 +86,19 @@ void FloatingBall::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    if (m_inDockedState) {
-        drawDockedState(painter);
-        return;
+    drawTrail(painter);
+
+    switch (m_dockDirection) {
+        case DockDirection::Left:
+        case DockDirection::Right:
+            drawDockedVerticalCapsule(painter);
+            return;
+        case DockDirection::Top:
+        case DockDirection::Bottom:
+            drawDockedHorizontalCapsule(painter);
+            return;
+        case DockDirection::None:
+            break;
     }
 
     if (m_ballShrinkProgress > 0.0) {
@@ -314,7 +324,7 @@ void FloatingBall::drawSegments(QPainter& painter) {
 }
 
 
-void FloatingBall::drawDockedState(QPainter &painter) {
+void FloatingBall::drawDockedVerticalCapsule(QPainter &painter) {
     QPoint center = rect().center();
 
     constexpr int capsuleWidth = 20;
@@ -355,6 +365,72 @@ void FloatingBall::drawDockedState(QPainter &painter) {
     painter.drawPath(path);
 }
 
+
+void FloatingBall::drawDockedHorizontalCapsule(QPainter &painter) {
+    QPoint center = rect().center();
+
+    constexpr int capsuleWidth = 60;
+    constexpr int capsuleHeight = 20;
+    constexpr int radius = capsuleHeight / 2;
+
+    QRectF leftArcRect(
+        center.x() - capsuleWidth / 2,
+        center.y() - radius,
+        capsuleHeight,
+        capsuleHeight
+    );
+
+    QRectF rightArcRect(
+        center.x() + capsuleWidth / 2 - capsuleHeight,
+        center.y() - radius,
+        capsuleHeight,
+        capsuleHeight
+    );
+
+    QPainterPath path;
+
+    path.moveTo(leftArcRect.center());
+
+    path.arcTo(leftArcRect, 90, 180);
+
+    path.lineTo(rightArcRect.left(), rightArcRect.bottom());
+
+    path.arcTo(rightArcRect, 270, 180);
+
+    path.lineTo(leftArcRect.right() - radius, leftArcRect.top());
+
+    path.closeSubpath();
+
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setBrush(QColor(220, 220, 220, 200));
+    painter.setPen(Qt::NoPen);
+    painter.drawPath(path);
+}
+
+
+void FloatingBall::drawTrail(QPainter &painter) {
+    if (m_trailPoints.empty())
+        return;
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    for (int i = 0; i < m_trailPoints.size(); ++i) {
+        const QPointF& pt = m_trailPoints[i];
+
+        float alpha = 150.0f * (1.0f - float(i) / m_trailPoints.size());
+
+        QColor color(141, 196, 253, int(alpha));
+        painter.setBrush(color);
+        painter.setPen(Qt::NoPen);
+
+        float radius = m_innerRadius * 0.5 * (1.0f - float(i) / m_trailPoints.size());
+
+        painter.drawEllipse(pt - QPointF(radius, radius), radius, radius);
+    }
+
+    painter.restore();
+}
 
 // ======= 动画 =======
 
@@ -633,7 +709,7 @@ void FloatingBall::mousePressEvent(QMouseEvent * event) {
         }
 
     } else if (event->button() == Qt::RightButton) {
-        if (!m_inDockedState) {
+        if (m_dockDirection == DockDirection::None) {
             if (!m_expanded && (m_expandedLayerCount == 0)) {
                 m_expandedLayerCount = 1;
                 m_hoverTimer->start();
@@ -674,7 +750,9 @@ void FloatingBall::enterEvent(QEnterEvent* event) {
 void FloatingBall::leaveEvent(QEvent* event) {
     m_selected = false;
 
-    stickToNearestEdge(true);
+    if (m_dockDirection != DockDirection::None) {
+        stickToNearestEdge(true);
+    }
 
     if (m_jellyOffset.manhattanLength() > 0.1) {
         startJellyRestoreElastic();
@@ -698,6 +776,11 @@ void FloatingBall::performDrag(const QPoint& globalPos) {
     m_jellyOffset = delta * 3.5;//* 0.5;
     m_jellyOffset.setX(std::clamp(m_jellyOffset.x(), -100.0, 100.0));
     m_jellyOffset.setY(std::clamp(m_jellyOffset.y(), -100.0, 100.0));
+
+    m_trailPoints.push_back(rect().center());
+    if (m_trailPoints.size() > 20) {
+        m_trailPoints.pop_front();
+    }
 
     m_lastDragPos = globalPos;
 
@@ -760,35 +843,35 @@ void FloatingBall::stickToNearestEdge(bool isDocked) {
     QPoint targetCenter = center;
 
     if (minDist > snapThreshold) {
-        m_inDockedState = false;
+        m_dockDirection = DockDirection::None;
         return;
     }
 
-    m_inDockedState = true;
+    if (minDist == leftDist) {
+        targetCenter.setX(screenRect.left() + r - 35);
+        m_dockDirection = DockDirection::Left;
+    } else if (minDist == rightDist) {
+        targetCenter.setX(screenRect.right() - r + 35);
+        m_dockDirection = DockDirection::Right;
+    } else if (minDist == topDist) {
+        targetCenter.setY(screenRect.top() + r - 35);
+        m_dockDirection = DockDirection::Top;
+    } else if (minDist == bottomDist) {
+        targetCenter.setY(screenRect.bottom() - r + 35);
+        m_dockDirection = DockDirection::Bottom;
+    }
 
     if (isDocked) {
-        if (minDist == leftDist)
-            targetCenter.setX(screenRect.left() + r - 35);
-        else if (minDist == rightDist)
-            targetCenter.setX(screenRect.right() - r + 35);
-        else if (minDist == topDist)
-            targetCenter.setY(screenRect.top() + r);
-        else if (minDist == bottomDist)
-            targetCenter.setY(screenRect.bottom() - r);
-
         QPoint offset = rect().center();
         QPoint targetTopLeft = targetCenter - offset;
 
-        this->move(targetTopLeft);
+        QPropertyAnimation* anim = new QPropertyAnimation(this, "pos");
+        anim->setDuration(200);
+        anim->setStartValue(this->pos());
+        anim->setEndValue(targetTopLeft);
+        anim->setEasingCurve(QEasingCurve::OutQuad);
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
     }
-
-    // 平滑动画
-    // QPropertyAnimation* anim = new QPropertyAnimation(this, "pos");
-    // anim->setDuration(200);
-    // anim->setStartValue(this->pos());
-    // anim->setEndValue(targetTopLeft);
-    // anim->setEasingCurve(QEasingCurve::OutQuad);
-    // anim->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 

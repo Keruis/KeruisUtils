@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <deque>
 #include <ranges>
 #include <algorithm>
 
@@ -18,6 +19,7 @@
 #include "FloatingBall.h"
 #include "../../Script/ClassRegistry.h"
 #include "../../Tool/window/WindowController.h"
+
 class FloatingBall : public QWidget {
     Q_OBJECT
 
@@ -25,23 +27,31 @@ class FloatingBall : public QWidget {
         std::string label;
         std::vector<MenuNode> children;
 
-        MenuNode(std::string label, std::vector<MenuNode> children) : label(label), children(children) {}
+        MenuNode(const std::string& label, const std::vector<MenuNode>& children) : label(label), children(children) {}
     };
 
     struct Ripple {
         float progress = 0.0f;
-        QPoint center;
         QDateTime createdAt = QDateTime::currentDateTime();
+        QPoint center;
+    };
+
+    enum class DockDirection {
+        None,
+        Left,
+        Right,
+        Top,
+        Bottom
     };
 
 public:
     explicit FloatingBall               (QWidget* parent = nullptr)                                     ;
-    ~FloatingBall                       ()                                                              ;
+    ~FloatingBall                       () override                                                     ;
 
     void setSelected                    (bool selected)            { m_selected = selected; update(); } ;
 
-    QPoint centerGlobalPos              ()                          const { return m_centerGlobalPos; } ;
-    bool   isSelected                   ()                          const { return        m_selected; } ;
+    [[nodiscard]] QPoint centerGlobalPos()                          const { return m_centerGlobalPos; } ;
+    [[nodiscard]] bool   isSelected     ()                          const { return        m_selected; } ;
 
 protected:
     void paintEvent                     (QPaintEvent*)              override                            ;
@@ -60,7 +70,9 @@ private:
 
     void drawBall                       (QPainter& painter)                                             ;
     void drawSegments                   (QPainter& painter)                                             ;
-    void drawDockedState                (QPainter& painter)                                             ;
+    void drawDockedVerticalCapsule      (QPainter& painter)                                             ;
+    void drawDockedHorizontalCapsule    (QPainter& painter)                                             ;
+    void drawTrail                      (QPainter& painter)                                             ;
     void storeDragOffset                (const QPoint& globalPos)                                       ;
     void performDrag                    (const QPoint& globalPos)                                       ;
 
@@ -85,12 +97,9 @@ private:
     void updateHoveredByDirection       ()                                                              ;
     int  getHoveredSegmentFromAngle     (int layer, double angle)     const                             ;
 
-    Q_PROPERTY(float eyeOpenProgress READ eyeOpenProgress WRITE setEyeOpenProgress)
-    float eyeOpenProgress() const { return m_eyeOpenProgress; }
-    void setEyeOpenProgress(float value) {
-        m_eyeOpenProgress = value;
-        update(); // 每当进度更新，重新绘制
-    }
+    Q_PROPERTY  (float eyeOpenProgress READ eyeOpenProgress WRITE setEyeOpenProgress)
+    float eyeOpenProgress               () const        { return m_eyeOpenProgress;                     }
+    void  setEyeOpenProgress            (float value)   {m_eyeOpenProgress = value;update();            }
 
     void generateMenuLayers             ()                                                              ;
     std::vector<MenuNode> TESTgenerateMenu(
@@ -144,5 +153,7 @@ private:
     QPointF                                    m_lastDragPos;
     QVariantAnimation*               m_jellyRestoreAnimation;
 
-    bool                                     m_inDockedState;
+    DockDirection                            m_dockDirection;
+
+    std::deque<QPointF>                       m_trailPoints;
 };
