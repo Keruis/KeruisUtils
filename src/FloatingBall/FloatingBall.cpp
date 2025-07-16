@@ -409,28 +409,41 @@ void FloatingBall::drawDockedHorizontalCapsule(QPainter &painter) {
 
 
 void FloatingBall::drawTrail(QPainter &painter) {
-    if (m_trailPoints.empty())
+    if (m_trailPoints.size() < 2)
         return;
 
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
 
-    for (int i = 0; i < m_trailPoints.size(); ++i) {
-        const QPointF& pt = m_trailPoints[i];
+    for (int i = 0; i < m_trailPoints.size() - 1; ++i) {
+        // 将全局/父坐标转为本地坐标
+        QPointF pt1_local = mapFromParent(m_trailPoints[i]);
+        QPointF pt2_local = mapFromParent(m_trailPoints[i + 1]);
+
+        // 获取 pt2 到 pt1 的方向向量
+        QPointF dir = pt1_local - pt2_local;
+        qreal len = std::hypot(dir.x(), dir.y());
+
+        // 归一化反方向单位向量
+        QPointF offset(0, 0);
+        if (len > 1e-3)
+            offset = dir / len * 10.0;
+
+        QPointF pt3 = pt1_local + offset;
 
         float alpha = 150.0f * (1.0f - float(i) / m_trailPoints.size());
-
         QColor color(141, 196, 253, int(alpha));
         painter.setBrush(color);
-        painter.setPen(Qt::NoPen);
 
         float radius = m_innerRadius * 0.5 * (1.0f - float(i) / m_trailPoints.size());
 
-        painter.drawEllipse(pt - QPointF(radius, radius), radius, radius);
+        painter.drawEllipse(pt3 - QPointF(radius, radius), radius, radius);
     }
 
     painter.restore();
 }
+
 
 // ======= 动画 =======
 
@@ -777,7 +790,7 @@ void FloatingBall::performDrag(const QPoint& globalPos) {
     m_jellyOffset.setX(std::clamp(m_jellyOffset.x(), -100.0, 100.0));
     m_jellyOffset.setY(std::clamp(m_jellyOffset.y(), -100.0, 100.0));
 
-    m_trailPoints.push_back(rect().center());
+    m_trailPoints.emplace_back(mapToGlobal(rect().center()));
     if (m_trailPoints.size() > 20) {
         m_trailPoints.pop_front();
     }
