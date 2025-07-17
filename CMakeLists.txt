@@ -20,14 +20,18 @@ find_package(Qt6 COMPONENTS
 aux_source_directory(./src srcs)
 
 add_executable(${PROJECT_NAME}
-    WIN32 # If you need a terminal for debug, please comment this statement 
-    src/RedialMenu/RedialMenu.cpp
+    WIN32 # If you need a terminal for debug, please comment this statement
     src/FloatingBall/FloatingBall.cpp
     ${srcs}
         Script/ClassRegistry.cpp
         Script/ClassRegistry.h
         Tool/window/WindowController.cpp
         Tool/window/WindowController.h
+        src/Trail/TrailNode.h
+        src/Trail/TrailPath.h
+        src/Trail/TrailWidget.h
+        src/Trail/test.cpp
+        src/ext/math/math.ixx
 
 ) 
 
