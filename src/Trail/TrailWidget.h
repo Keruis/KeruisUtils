@@ -7,6 +7,12 @@
 #include <QWidget>
 #include <QMouseEvent>
 #include <QTimer>
+#include <QPainter>
+#include <QImage>
+#include <QColor>
+#include <QPolygonF>
+#include <QPointF>
+
 #include "TrailPath.h"
 
 class TrailWidget : public QWidget {
@@ -22,18 +28,24 @@ public:
 
 protected:
     void paintEvent(QPaintEvent*) override {
+        qDebug() << "paintEvent called!";
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        trail.draw(painter, 15.0f, 1.0f, QColor(255, 0, 0, 160));
+        trail.each(5.0f, [&](int index, const QPointF& p1, const QPointF& p2, const QPointF& p3, const QPointF& p4, float progress1, float progress2) {
+            painter.setBrush(QColor(255, 0, 0, 255 * progress1));
+
+            QPolygonF quad({p1, p2, p3, p4});
+            painter.drawPolygon(quad);
+        });
     }
 
     void mouseMoveEvent(QMouseEvent* event) override {
-        trail.addPoint(event->position());
+        trail.addPoint(event->pos(), 1.0f);
         update();
     }
 
 private:
-    TrailPath trail{100};
+    TrailPath trail;
 };
 
 #endif //TRAILWIDGET_H

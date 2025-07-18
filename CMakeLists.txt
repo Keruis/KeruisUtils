@@ -31,7 +31,7 @@ add_executable(${PROJECT_NAME}
         src/Trail/TrailPath.h
         src/Trail/TrailWidget.h
         src/Trail/test.cpp
-        src/ext/math/math.ixx
+        src/ext/math/math.h
 
 ) 
 

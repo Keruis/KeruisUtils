@@ -5,12 +5,11 @@
 
 struct TrailNode {
     QPointF pos;
-    float scale = 1.0f;
+    float scale;
 
-    TrailNode() = default;
-    TrailNode(const QPointF& p, float s = 1.0f) : pos(p), scale(s) {}
+    TrailNode(const QPointF& pos, float scale) : pos(pos), scale(scale) {}
 
-    constexpr QPointF lerp(const QPointF& a, const QPointF& b, float t) noexcept {
+    static constexpr QPointF lerp(const QPointF& a, const QPointF& b, float t) noexcept {
         return QPointF{
             std::lerp(a.x(), b.x(), t),
             std::lerp(a.y(), b.y(), t)

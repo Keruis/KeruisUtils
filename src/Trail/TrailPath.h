@@ -1,20 +1,18 @@
 #ifndef TRAILPATH_H
 #define TRAILPATH_H
 
-#include <queue>
+#include <vector>
 #include <algorithm>
 
 #include <QPointF>
 #include <QPainter>
+#include <QMutex>
 
 #include "TrailNode.h"
-
-import math;
+#include "../ext/math/math.h"
 
 class TrailPath {
 public:
-    TrailPath();
-    ~TrailPath();
 
     [[nodiscard]] auto size() -> std::size_t {return m_points.size();}
 
@@ -22,7 +20,7 @@ public:
         if (m_points.size() >= m_capacity) {
             m_points.erase(m_points.begin());
         }
-        m_points.emplace_back(pos);
+        m_points.emplace_back(TrailNode{pos, scale});
     }
 
     template <typename Func>
@@ -54,22 +52,22 @@ public:
                 return z2;
             }
 
-            if constexpr(std::invocable<Func, int, TrailNode, TrailNode, TrailNode, TrailNode, float, float>){
+            if constexpr(std::invocable<Func, int, QPointF, QPointF, QPointF, QPointF, float, float>){
                 float progressFormer = prevProg / capSize;
                 float progressLatter = nextProg / capSize;
 
                 consumer(index, prev.pos - c, prev.pos + c, next.pos + n, next.pos - n, progressFormer, progressLatter);
-            } else if constexpr(std::invocable<Func, int, TrailNode, TrailNode, TrailNode, TrailNode>){
+            } else if constexpr(std::invocable<Func, int, QPointF, QPointF, QPointF, QPointF>){
                 consumer(index, prev.pos - c, prev.pos + c, next.pos + n, next.pos - n);
-            } else if constexpr(std::invocable<Func, TrailNode, TrailNode, TrailNode, TrailNode, float, float>){
+            } else if constexpr(std::invocable<Func, QPointF, QPointF, QPointF, QPointF, float, float>){
                 float progressFormer = prevProg / capSize;
                 float progressLatter = nextProg / capSize;
 
                 consumer(prev.pos - c, prev.pos + c, next.pos + n, next.pos - n, progressFormer, progressLatter);
-            } else if constexpr(std::invocable<Func, TrailNode, TrailNode, TrailNode, TrailNode>){
+            } else if constexpr(std::invocable<Func, QPointF, QPointF, QPointF, QPointF>){
                 consumer(prev.pos - c, prev.pos + c, next.pos + n, next.pos - n);
             } else{
-                static_assert(std::false_type{}, "consumer not supported");
+                qDebug() << "consumer not supported";
             }
 
             return z2;
@@ -102,7 +100,7 @@ public:
 
 private:
     std::vector<TrailNode> m_points;
-    std::size_t m_capacity;
+    std::size_t m_capacity = 200;
 };
 
 #endif //TRAILPATH_H
