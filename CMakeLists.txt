@@ -27,12 +27,9 @@ add_executable(${PROJECT_NAME}
         Script/ClassRegistry.h
         Tool/window/WindowController.cpp
         Tool/window/WindowController.h
-        src/Trail/TrailNode.h
-        src/Trail/TrailPath.h
-        src/Trail/TrailWidget.h
-        src/Trail/test.cpp
+        src/core/draw/Trail/TrailNode.h
+        src/core/draw/Trail/TrailPath.h
         src/ext/math/math.h
-
 ) 
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 

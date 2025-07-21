@@ -9,12 +9,14 @@
 #include <QMutex>
 
 #include "TrailNode.h"
-#include "../ext/math/math.h"
+#include "../../../ext/math/math.h"
 
 class TrailPath {
 public:
 
     [[nodiscard]] auto size() -> std::size_t {return m_points.size();}
+
+    void clear() {m_points.clear();}
 
     void addPoint(const QPointF& pos, float scale = 1.0f) {
         if (m_points.size() >= m_capacity) {
@@ -100,7 +102,7 @@ public:
 
 private:
     std::vector<TrailNode> m_points;
-    std::size_t m_capacity = 200;
+    std::size_t m_capacity = 100;
 };
 
 #endif //TRAILPATH_H

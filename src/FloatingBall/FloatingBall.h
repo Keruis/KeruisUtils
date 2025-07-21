@@ -14,9 +14,11 @@
 #include <QPropertyAnimation>
 #include <QTimer>
 #include <QDateTime>
+#include <QGraphicsDropShadowEffect>
 #include <QElapsedTimer>
 
 #include "FloatingBall.h"
+#include "../core/draw/Trail/TrailPath.h"
 #include "../../Script/ClassRegistry.h"
 #include "../../Tool/window/WindowController.h"
 
@@ -124,6 +126,7 @@ private:
 
     QPoint                                      m_dragOffset;
     QPoint                                 m_centerGlobalPos;
+    bool                                        m_isDragging;
 
     std::vector<qreal>                        m_drawProgress;
 
@@ -155,5 +158,5 @@ private:
 
     DockDirection                            m_dockDirection;
 
-    std::deque<QPointF>                       m_trailPoints;
+    TrailPath                                        m_trail;
 };

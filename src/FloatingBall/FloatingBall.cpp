@@ -16,6 +16,7 @@ FloatingBall::FloatingBall(QWidget* parent)
       m_expandedLayerCount(0),
       m_eyeOpenProgress(1.0),
       m_jellyRestoreAnimation(nullptr),
+      m_isDragging(false),
       m_dockDirection(DockDirection::None)
 {
     setupWindowFlags();
@@ -86,8 +87,6 @@ void FloatingBall::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    drawTrail(painter);
-
     switch (m_dockDirection) {
         case DockDirection::Left:
         case DockDirection::Right:
@@ -102,6 +101,7 @@ void FloatingBall::paintEvent(QPaintEvent*) {
     }
 
     if (m_ballShrinkProgress > 0.0) {
+        drawTrail(painter);
         drawBall(painter);
     }
 
@@ -172,6 +172,11 @@ void FloatingBall::drawBall(QPainter& painter) {
     );
 
     QColor innerColor = QColor(124,164,223, 220);
+
+    if (m_isDragging) {
+        painter.setBrush(QColor(0,0,0,255));
+        painter.drawEllipse(ellipseRect);
+    }
 
     painter.setBrush(gradient);
     painter.setPen(Qt::NoPen);
@@ -409,39 +414,24 @@ void FloatingBall::drawDockedHorizontalCapsule(QPainter &painter) {
 
 
 void FloatingBall::drawTrail(QPainter &painter) {
-    if (m_trailPoints.size() < 2)
-        return;
+    const QPointF offset = this->pos();
 
-    painter.save();
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setPen(Qt::NoPen);
+    m_trail.each(m_innerRadius, [&](int index,
+                          const QPointF& p1, const QPointF& p2,
+                          const QPointF& p3, const QPointF& p4,
+                          float progress1, float progress2) {
+        const QPointF lp1 = p1 - offset;
+        const QPointF lp2 = p2 - offset;
+        const QPointF lp3 = p3 - offset;
+        const QPointF lp4 = p4 - offset;
 
-    for (int i = 0; i < m_trailPoints.size() - 1; ++i) {
-        // 将全局/父坐标转为本地坐标
-        QPointF pt1_local = mapFromParent(m_trailPoints[i]);
-        QPointF pt2_local = mapFromParent(m_trailPoints[i + 1]);
-
-        // 获取 pt2 到 pt1 的方向向量
-        QPointF dir = pt1_local - pt2_local;
-        qreal len = std::hypot(dir.x(), dir.y());
-
-        // 归一化反方向单位向量
-        QPointF offset(0, 0);
-        if (len > 1e-3)
-            offset = dir / len * 10.0;
-
-        QPointF pt3 = pt1_local + offset;
-
-        float alpha = 150.0f * (1.0f - float(i) / m_trailPoints.size());
-        QColor color(141, 196, 253, int(alpha));
+        const QColor color(141,196,233, static_cast<int>(255 * progress1));
         painter.setBrush(color);
+        painter.setPen(Qt::NoPen);
 
-        float radius = m_innerRadius * 0.5 * (1.0f - float(i) / m_trailPoints.size());
-
-        painter.drawEllipse(pt3 - QPointF(radius, radius), radius, radius);
-    }
-
-    painter.restore();
+        QPolygonF quad({lp1, lp2, lp3, lp4});
+        painter.drawPolygon(quad);
+    });
 }
 
 
@@ -740,6 +730,9 @@ void FloatingBall::mousePressEvent(QMouseEvent * event) {
 
 void FloatingBall::mouseMoveEvent(QMouseEvent *event) {
     stickToNearestEdge(false);
+
+    m_isDragging = false;
+
     if (event->buttons() & Qt::LeftButton) {
         if (m_expandedLayerCount == 0) {
             performDrag(event->globalPos());
@@ -762,6 +755,9 @@ void FloatingBall::enterEvent(QEnterEvent* event) {
 
 void FloatingBall::leaveEvent(QEvent* event) {
     m_selected = false;
+    m_isDragging = false;
+
+    m_trail.clear();
 
     if (m_dockDirection != DockDirection::None) {
         stickToNearestEdge(true);
@@ -784,16 +780,16 @@ void FloatingBall::storeDragOffset(const QPoint& globalPos) {
 }
 
 void FloatingBall::performDrag(const QPoint& globalPos) {
+    m_isDragging = true;
+
     QPointF delta = globalPos - m_lastDragPos;
 
     m_jellyOffset = delta * 3.5;//* 0.5;
     m_jellyOffset.setX(std::clamp(m_jellyOffset.x(), -100.0, 100.0));
     m_jellyOffset.setY(std::clamp(m_jellyOffset.y(), -100.0, 100.0));
 
-    m_trailPoints.emplace_back(mapToGlobal(rect().center()));
-    if (m_trailPoints.size() > 20) {
-        m_trailPoints.pop_front();
-    }
+    QPointF center = mapToGlobal(rect().center());
+    m_trail.addPoint(center, 1.0f);
 
     m_lastDragPos = globalPos;
 
